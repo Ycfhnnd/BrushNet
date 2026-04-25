@@ -19,13 +19,19 @@ import inspect
 import json
 import os
 import re
+import hashlib
 import shutil
 import sys
 from pathlib import Path
 from typing import Dict, Optional, Union
 from urllib import request
 
-from huggingface_hub import cached_download, hf_hub_download, model_info
+try:
+    from huggingface_hub import cached_download
+except ImportError:
+    cached_download = None
+
+from huggingface_hub import hf_hub_download, model_info
 from huggingface_hub.utils import validate_hf_hub_args
 from packaging import version
 
@@ -39,6 +45,45 @@ COMMUNITY_PIPELINES_URL = (
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
+
+
+def _cached_download_compat(
+    url,
+    cache_dir=None,
+    force_download=False,
+    proxies=None,
+    resume_download=False,
+    local_files_only=False,
+    token=None,
+):
+    if cached_download is not None:
+        return cached_download(
+            url,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            proxies=proxies,
+            resume_download=resume_download,
+            local_files_only=local_files_only,
+            token=token,
+        )
+
+    if local_files_only:
+        raise FileNotFoundError(f"Cannot load {url} with `local_files_only=True` because it is not cached locally.")
+
+    if cache_dir is None:
+        cache_dir = os.path.join(HF_MODULES_CACHE, "downloads")
+
+    os.makedirs(cache_dir, exist_ok=True)
+
+    filename = f"{hashlib.sha256(url.encode('utf-8')).hexdigest()}-{os.path.basename(url)}"
+    destination = os.path.join(cache_dir, filename)
+
+    if force_download or not os.path.exists(destination):
+        opener = request.build_opener(request.ProxyHandler(proxies)) if proxies else request.build_opener()
+        with opener.open(url) as response, open(destination, "wb") as f:
+            shutil.copyfileobj(response, f)
+
+    return destination
 
 
 def get_diffusers_versions():
@@ -284,7 +329,7 @@ def get_cached_module_file(
         # community pipeline on GitHub
         github_url = COMMUNITY_PIPELINES_URL.format(revision=revision, pipeline=pretrained_model_name_or_path)
         try:
-            resolved_module_file = cached_download(
+            resolved_module_file = _cached_download_compat(
                 github_url,
                 cache_dir=cache_dir,
                 force_download=force_download,
