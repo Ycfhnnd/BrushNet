@@ -142,10 +142,22 @@ def log_validation(
                 validation_image = log["validation_image"]
 
                 formatted_images = []
+                reference_size = images[0].size if len(images) > 0 else validation_image.size
+                resample = Image.Resampling.BICUBIC if hasattr(Image, "Resampling") else Image.BICUBIC
+
+                if validation_image.size != reference_size or any(image.size != reference_size for image in images):
+                    logger.info(
+                        f"Resizing validation log images to {reference_size} before writing to TensorBoard."
+                    )
+
+                if validation_image.size != reference_size:
+                    validation_image = validation_image.resize(reference_size, resample)
 
                 formatted_images.append(np.asarray(validation_image))
 
                 for image in images:
+                    if image.size != reference_size:
+                        image = image.resize(reference_size, resample)
                     formatted_images.append(np.asarray(image))
 
                 formatted_images = np.stack(formatted_images)
@@ -555,6 +567,11 @@ def parse_args(input_args=None):
         ),
     )
     parser.add_argument(
+        "--disable_validation",
+        action="store_true",
+        help="Disable validation during and after training.",
+    )
+    parser.add_argument(
         "--tracker_project_name",
         type=str,
         default="train_brushnet",
@@ -575,6 +592,12 @@ def parse_args(input_args=None):
         args = parser.parse_args(input_args)
     else:
         args = parser.parse_args()
+
+    if args.disable_validation:
+        args.validation_prompt = None
+        args.validation_image = None
+        args.validation_mask = None
+        args.num_validation_images = 0
 
     if args.dataset_name is None and args.train_data_dir is None:
         raise ValueError("Specify either `--dataset_name` or `--train_data_dir`")

@@ -18,8 +18,11 @@ try:
         QApplication,
         QCheckBox,
         QComboBox,
+        QDialog,
+        QDialogButtonBox,
         QDoubleSpinBox,
         QFileDialog,
+        QFormLayout,
         QFrame,
         QGridLayout,
         QGroupBox,
@@ -31,11 +34,11 @@ try:
         QMainWindow,
         QMessageBox,
         QPushButton,
-        QPlainTextEdit,
         QScrollArea,
         QSizePolicy,
         QSpinBox,
         QSplitter,
+        QTabWidget,
         QTextEdit,
         QVBoxLayout,
         QWidget,
@@ -63,24 +66,38 @@ except Exception as exc:
 
 APP_STYLE = """
 QMainWindow {
-  background: #f5f1e8;
+  background: #edf2f6;
 }
 
 QWidget {
   font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
   font-size: 14px;
-  color: #21352e;
+  color: #1b2733;
 }
 
 QLabel#TitleLabel {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
-  color: #173f38;
+  color: #102a43;
 }
 
 QLabel#SubTitleLabel {
+  font-size: 13px;
+  color: #526170;
+}
+
+QLabel#HintLabel {
   font-size: 12px;
-  color: #4b5f58;
+  color: #66788a;
+}
+
+QLabel#PillLabel {
+  background: #e8f1fb;
+  border: 1px solid #c9d8e8;
+  border-radius: 6px;
+  color: #244a73;
+  font-size: 12px;
+  padding: 4px 9px;
 }
 
 QLabel#BrandLogoLabel {
@@ -91,68 +108,76 @@ QLabel#BrandLogoLabel {
 
 QFrame#HeroCard,
 QGroupBox {
-  background: #fffdf8;
-  border: 1px solid #d7ddd7;
-  border-radius: 20px;
+  background: #ffffff;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+}
+
+QFrame#HeroCard {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #ffffff, stop:0.58 #f8fbfd, stop:1 #eef6f3);
 }
 
 QGroupBox {
   font-weight: 700;
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
 }
 
 QGroupBox::title {
   subcontrol-origin: margin;
-  left: 16px;
-  padding: 0 6px;
-  color: #173f38;
+  left: 14px;
+  padding: 0 7px;
+  color: #243b53;
 }
 
 QPushButton {
   min-height: 36px;
-  border-radius: 12px;
-  background: #dfeee8;
-  border: 1px solid #bdd3c8;
+  border-radius: 7px;
+  background: #f7fafc;
+  border: 1px solid #cbd5e1;
   padding: 0 14px;
   font-weight: 600;
+  color: #22313f;
 }
 
 QPushButton:hover {
-  background: #d2e8df;
+  background: #eef4f8;
+  border-color: #9fb3c8;
 }
 
 QPushButton#PrimaryButton {
-  background: #0c7b6c;
+  background: #0f766e;
   color: white;
   border: none;
 }
 
 QPushButton#PrimaryButton:hover {
-  background: #0a6f61;
+  background: #0b635d;
 }
 
 QPushButton#AccentButton {
-  background: #d78745;
+  background: #255f9e;
   color: white;
   border: none;
 }
 
 QPushButton#AccentButton:hover {
-  background: #c87635;
+  background: #1f4f84;
 }
 
 QLineEdit,
 QTextEdit,
-QPlainTextEdit,
 QComboBox,
 QSpinBox,
 QDoubleSpinBox,
 QListWidget {
   background: white;
-  border: 1px solid #cfd8d2;
-  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
   padding: 6px 8px;
+  selection-background-color: #d9ecff;
+  selection-color: #102a43;
 }
 
 QListWidget {
@@ -161,6 +186,10 @@ QListWidget {
 
 QScrollArea {
   border: none;
+}
+
+QSplitter::handle {
+  background: #d9e2ec;
 }
 """
 
@@ -398,10 +427,10 @@ class ImageCanvas(QLabel):
         self.setStyleSheet(
             """
             QLabel {
-              background: #ffffff;
-              border: 1px dashed #b8c8bf;
-              border-radius: 18px;
-              color: #60716b;
+              background: #fbfdff;
+              border: 1px dashed #aab7c4;
+              border-radius: 8px;
+              color: #627386;
               padding: 10px;
             }
             """
@@ -553,10 +582,6 @@ class BrushNetQtWindow(QMainWindow):
         title_label = QLabel("基于扩散模型的双分支结构的图像修复技术研究")
         title_label.setObjectName("TitleLabel")
         title_label.setWordWrap(True)
-        subtitle_label = QLabel("桌面版可视化界面：支持示例加载、SAM 点击分割、黑白掩码上传、模型切换与局部重绘结果展示。")
-        subtitle_label.setObjectName("SubTitleLabel")
-        subtitle_label.setWordWrap(True)
-        subtitle_label.setMaximumWidth(860)
 
         brand_label = QLabel()
         brand_label.setObjectName("BrandLogoLabel")
@@ -576,7 +601,14 @@ class BrushNetQtWindow(QMainWindow):
         hero_text_layout.setSpacing(2)
         hero_text_layout.addStretch(1)
         hero_text_layout.addWidget(title_label)
-        hero_text_layout.addWidget(subtitle_label)
+        hero_badges = QHBoxLayout()
+        hero_badges.setSpacing(8)
+        for text in ("SAM 交互分割", "结果展示"):
+            badge = QLabel(text)
+            badge.setObjectName("PillLabel")
+            hero_badges.addWidget(badge)
+        hero_badges.addStretch(1)
+        hero_text_layout.addLayout(hero_badges)
         hero_text_layout.addStretch(1)
         hero_row.addWidget(hero_text_widget, 1)
 
@@ -612,15 +644,6 @@ class BrushNetQtWindow(QMainWindow):
         image_button_row.addWidget(self.clear_mask_button)
         image_layout.addLayout(image_button_row)
 
-        example_row = QHBoxLayout()
-        self.example_combo = QComboBox()
-        self.example_combo.addItems([case["label"] for case in core.EXAMPLE_CASES])
-        self.load_example_button = QPushButton("加载示例")
-        self.load_example_button.setObjectName("AccentButton")
-        example_row.addWidget(self.example_combo, 1)
-        example_row.addWidget(self.load_example_button)
-        image_layout.addLayout(example_row)
-
         point_row = QHBoxLayout()
         self.point_mode_combo = QComboBox()
         self.point_mode_combo.addItems(["添加区域", "排除区域"])
@@ -638,9 +661,9 @@ class BrushNetQtWindow(QMainWindow):
         point_button_row.addWidget(self.clear_points_button)
         image_layout.addLayout(point_button_row)
 
-        left_layout.addWidget(image_group)
+        left_layout.addWidget(image_group, 1)
 
-        prompt_group = QGroupBox("提示词与模型参数")
+        prompt_group = QGroupBox("提示词与生成操作")
         prompt_layout = QVBoxLayout(prompt_group)
         prompt_layout.setSpacing(10)
 
@@ -656,70 +679,23 @@ class BrushNetQtWindow(QMainWindow):
         self.negative_prompt_edit.setPlainText("ugly, low quality, blurry, distorted")
         prompt_layout.addWidget(self.negative_prompt_edit)
 
-        variant_row = QHBoxLayout()
-        self.model_variant_combo = QComboBox()
-        self.model_variant_combo.addItems(list(core.get_brushnet_variant_map(self.default_base_model).keys()))
-        variant_row.addWidget(QLabel("模型预设"))
-        variant_row.addWidget(self.model_variant_combo, 1)
-        prompt_layout.addLayout(variant_row)
+        self.settings_summary_label = QLabel()
+        self.settings_summary_label.setObjectName("HintLabel")
+        self.settings_summary_label.setWordWrap(True)
+        prompt_layout.addWidget(self.settings_summary_label)
 
-        prompt_layout.addWidget(QLabel("基础模型路径 / Hugging Face 模型 ID"))
-        self.base_model_edit = QLineEdit(self.default_base_model)
-        prompt_layout.addWidget(self.base_model_edit)
-
-        prompt_layout.addWidget(QLabel("BrushNet 权重路径"))
-        self.brushnet_path_edit = QLineEdit(self.default_brushnet_path)
-        prompt_layout.addWidget(self.brushnet_path_edit)
-
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
-
-        self.control_strength_spin = QDoubleSpinBox()
-        self.control_strength_spin.setRange(0.0, 1.2)
-        self.control_strength_spin.setSingleStep(0.01)
-        self.control_strength_spin.setValue(1.0)
-
-        self.guidance_scale_spin = QDoubleSpinBox()
-        self.guidance_scale_spin.setRange(1.0, 15.0)
-        self.guidance_scale_spin.setSingleStep(0.1)
-        self.guidance_scale_spin.setValue(7.5)
-
-        self.steps_spin = QSpinBox()
-        self.steps_spin.setRange(10, 60)
-        self.steps_spin.setValue(50)
-
-        self.outputs_spin = QSpinBox()
-        self.outputs_spin.setRange(1, 4)
-        self.outputs_spin.setValue(1)
-
-        self.seed_spin = QSpinBox()
-        self.seed_spin.setRange(0, 2_147_483_647)
-        self.seed_spin.setValue(1234)
-
-        self.randomize_seed_checkbox = QCheckBox("每次随机种子")
-        self.blending_checkbox = QCheckBox("启用边缘模糊融合")
-
-        grid.addWidget(QLabel("Control Strength"), 0, 0)
-        grid.addWidget(self.control_strength_spin, 0, 1)
-        grid.addWidget(QLabel("Guidance Scale"), 0, 2)
-        grid.addWidget(self.guidance_scale_spin, 0, 3)
-        grid.addWidget(QLabel("Inference Steps"), 1, 0)
-        grid.addWidget(self.steps_spin, 1, 1)
-        grid.addWidget(QLabel("生成结果数"), 1, 2)
-        grid.addWidget(self.outputs_spin, 1, 3)
-        grid.addWidget(QLabel("Seed"), 2, 0)
-        grid.addWidget(self.seed_spin, 2, 1)
-        grid.addWidget(self.randomize_seed_checkbox, 2, 2, 1, 2)
-        grid.addWidget(self.blending_checkbox, 3, 0, 1, 2)
-        prompt_layout.addLayout(grid)
-
+        action_row = QHBoxLayout()
+        self.settings_button = QPushButton("参数设置")
+        self.settings_button.setObjectName("AccentButton")
         self.run_button = QPushButton("开始生成")
         self.run_button.setObjectName("PrimaryButton")
-        prompt_layout.addWidget(self.run_button)
+        action_row.addWidget(self.settings_button)
+        action_row.addWidget(self.run_button, 1)
+        prompt_layout.addLayout(action_row)
 
         left_layout.addWidget(prompt_group)
-        left_layout.addStretch(1)
+
+        self._build_settings_dialog()
 
         left_scroll.setWidget(left_panel)
         splitter.addWidget(left_scroll)
@@ -750,14 +726,6 @@ class BrushNetQtWindow(QMainWindow):
         result_layout.addWidget(self.result_list)
         right_layout.addWidget(result_group, 1)
 
-        status_group = QGroupBox("系统状态")
-        status_layout = QVBoxLayout(status_group)
-        self.status_box = QPlainTextEdit()
-        self.status_box.setReadOnly(True)
-        self.status_box.setMinimumHeight(190)
-        status_layout.addWidget(self.status_box)
-        right_layout.addWidget(status_group)
-
         splitter.addWidget(right_panel)
         splitter.setSizes([860, 700])
 
@@ -766,21 +734,128 @@ class BrushNetQtWindow(QMainWindow):
         self.open_image_button.clicked.connect(self._choose_source_image)
         self.open_mask_button.clicked.connect(self._choose_mask_image)
         self.clear_mask_button.clicked.connect(self._clear_uploaded_mask)
-        self.load_example_button.clicked.connect(self._load_selected_example)
         self.undo_button.clicked.connect(self._undo_last_point)
         self.clear_points_button.clicked.connect(self._clear_all_points)
         self.invert_mask_checkbox.stateChanged.connect(self._refresh_preview)
+        self.settings_button.clicked.connect(self._open_settings_dialog)
         self.model_variant_combo.currentTextChanged.connect(self._apply_variant_selection)
+        self.model_variant_combo.currentTextChanged.connect(self._update_settings_summary)
+        self.base_model_edit.textChanged.connect(self._update_settings_summary)
+        self.brushnet_path_edit.textChanged.connect(self._update_settings_summary)
+        self.control_strength_spin.valueChanged.connect(self._update_settings_summary)
+        self.guidance_scale_spin.valueChanged.connect(self._update_settings_summary)
+        self.steps_spin.valueChanged.connect(self._update_settings_summary)
+        self.outputs_spin.valueChanged.connect(self._update_settings_summary)
+        self.seed_spin.valueChanged.connect(self._update_settings_summary)
+        self.randomize_seed_checkbox.stateChanged.connect(self._update_settings_summary)
+        self.blending_checkbox.stateChanged.connect(self._update_settings_summary)
         self.run_button.clicked.connect(self._run_inference)
 
-    def _set_initial_status(self) -> None:
-        self.status_box.setPlainText(
-            core.summarize_status(
-                "系统已就绪，等待载入图片。",
-                self.default_base_model,
-                self.default_brushnet_path,
-            )
+    def _build_settings_dialog(self) -> None:
+        self.settings_dialog = QDialog(self)
+        self.settings_dialog.setWindowTitle("参数设置")
+        self.settings_dialog.resize(680, 520)
+
+        dialog_layout = QVBoxLayout(self.settings_dialog)
+        dialog_layout.setContentsMargins(18, 18, 18, 18)
+        dialog_layout.setSpacing(12)
+
+        header = QLabel("推理参数与模型路径")
+        header.setObjectName("TitleLabel")
+        dialog_layout.addWidget(header)
+
+        tabs = QTabWidget()
+        dialog_layout.addWidget(tabs, 1)
+
+        model_page = QWidget()
+        model_form = QFormLayout(model_page)
+        model_form.setContentsMargins(12, 14, 12, 12)
+        model_form.setSpacing(12)
+        self.model_variant_combo = QComboBox()
+        self.model_variant_combo.addItems(list(core.get_brushnet_variant_map(self.default_base_model).keys()))
+        self.base_model_edit = QLineEdit(self.default_base_model)
+        self.brushnet_path_edit = QLineEdit(self.default_brushnet_path)
+        model_form.addRow("模型预设", self.model_variant_combo)
+        model_form.addRow("基础模型路径 / Hugging Face ID", self.base_model_edit)
+        model_form.addRow("BrushNet 权重路径", self.brushnet_path_edit)
+        tabs.addTab(model_page, "模型")
+
+        generation_page = QWidget()
+        generation_grid = QGridLayout(generation_page)
+        generation_grid.setContentsMargins(12, 14, 12, 12)
+        generation_grid.setHorizontalSpacing(12)
+        generation_grid.setVerticalSpacing(12)
+
+        self.control_strength_spin = QDoubleSpinBox()
+        self.control_strength_spin.setRange(0.0, 1.2)
+        self.control_strength_spin.setSingleStep(0.01)
+        self.control_strength_spin.setValue(1.0)
+
+        self.guidance_scale_spin = QDoubleSpinBox()
+        self.guidance_scale_spin.setRange(1.0, 15.0)
+        self.guidance_scale_spin.setSingleStep(0.1)
+        self.guidance_scale_spin.setValue(7.5)
+
+        self.steps_spin = QSpinBox()
+        self.steps_spin.setRange(10, 60)
+        self.steps_spin.setValue(50)
+
+        self.outputs_spin = QSpinBox()
+        self.outputs_spin.setRange(1, 4)
+        self.outputs_spin.setValue(1)
+
+        self.seed_spin = QSpinBox()
+        self.seed_spin.setRange(0, 2_147_483_647)
+        self.seed_spin.setValue(1234)
+
+        self.randomize_seed_checkbox = QCheckBox("每次生成随机种子")
+        self.blending_checkbox = QCheckBox("启用边缘模糊融合")
+
+        generation_grid.addWidget(QLabel("Control Strength"), 0, 0)
+        generation_grid.addWidget(self.control_strength_spin, 0, 1)
+        generation_grid.addWidget(QLabel("Guidance Scale"), 0, 2)
+        generation_grid.addWidget(self.guidance_scale_spin, 0, 3)
+        generation_grid.addWidget(QLabel("Inference Steps"), 1, 0)
+        generation_grid.addWidget(self.steps_spin, 1, 1)
+        generation_grid.addWidget(QLabel("生成结果数"), 1, 2)
+        generation_grid.addWidget(self.outputs_spin, 1, 3)
+        generation_grid.addWidget(QLabel("Seed"), 2, 0)
+        generation_grid.addWidget(self.seed_spin, 2, 1)
+        generation_grid.addWidget(self.randomize_seed_checkbox, 2, 2, 1, 2)
+        generation_grid.addWidget(self.blending_checkbox, 3, 0, 1, 2)
+        generation_grid.setColumnStretch(1, 1)
+        generation_grid.setColumnStretch(3, 1)
+        generation_grid.setRowStretch(4, 1)
+        tabs.addTab(generation_page, "生成")
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Close)
+        button_box.rejected.connect(self.settings_dialog.close)
+        dialog_layout.addWidget(button_box)
+
+        self._update_settings_summary()
+
+    def _open_settings_dialog(self) -> None:
+        self.settings_dialog.show()
+        self.settings_dialog.raise_()
+        self.settings_dialog.activateWindow()
+
+    def _update_settings_summary(self, *_) -> None:
+        if not hasattr(self, "settings_summary_label"):
+            return
+        seed_text = "随机" if self.randomize_seed_checkbox.isChecked() else str(self.seed_spin.value())
+        blending_text = "开启" if self.blending_checkbox.isChecked() else "关闭"
+        self.settings_summary_label.setText(
+            "当前参数："
+            f"{self.model_variant_combo.currentText()} | "
+            f"结果 {self.outputs_spin.value()} 张 | "
+            f"Steps {self.steps_spin.value()} | "
+            f"CFG {self.guidance_scale_spin.value():.1f} | "
+            f"Control {self.control_strength_spin.value():.2f} | "
+            f"Seed {seed_text} | "
+            f"融合 {blending_text}"
         )
+
+    def _set_initial_status(self) -> None:
         self._apply_variant_selection(self.model_variant_combo.currentText())
 
     def _current_base_model(self) -> str:
@@ -793,7 +868,7 @@ class BrushNetQtWindow(QMainWindow):
         QMessageBox.critical(self, "BrushNet", message)
 
     def _set_status(self, status: str) -> None:
-        self.status_box.setPlainText(status)
+        return
 
     def _set_gallery_results(self, images: Sequence[Image.Image]) -> None:
         self.result_list.clear()
@@ -845,6 +920,7 @@ class BrushNetQtWindow(QMainWindow):
         self.guidance_scale_spin.setValue(7.5)
         self.randomize_seed_checkbox.setChecked(False)
         self.model_variant_combo.setCurrentText("分割掩码模型")
+        self._update_settings_summary()
 
     def _choose_mask_image(self) -> None:
         if self.original_image is None:
@@ -889,37 +965,6 @@ class BrushNetQtWindow(QMainWindow):
             return
         self.uploaded_mask = None
         self._refresh_preview()
-
-    def _load_selected_example(self) -> None:
-        try:
-            payload = core.load_example_case(
-                self.example_combo.currentText(),
-                self._current_base_model(),
-                self._current_brushnet_path(),
-            )
-        except core.BrushNetAppError as exc:
-            self._show_error(str(exc))
-            return
-
-        self.original_image = payload["image"]  # type: ignore[assignment]
-        self.original_mask = payload["raw_mask"]  # type: ignore[assignment]
-        self.uploaded_mask = None
-        self.selected_points = []
-
-        self.input_canvas.set_numpy_image(payload["overlay"])  # type: ignore[arg-type]
-        self.mask_preview.set_numpy_image(payload["raw_mask"])  # type: ignore[arg-type]
-        self.masked_preview.set_numpy_image(payload["masked_image"])  # type: ignore[arg-type]
-        self.prompt_edit.setPlainText(payload["prompt"])  # type: ignore[arg-type]
-        self.negative_prompt_edit.setPlainText(payload["negative_prompt"])  # type: ignore[arg-type]
-        self._set_gallery_results(payload["results"])  # type: ignore[arg-type]
-        self.outputs_spin.setValue(1)
-        self.steps_spin.setValue(50)
-        self.seed_spin.setValue(1234)
-        self.control_strength_spin.setValue(1.0)
-        self.guidance_scale_spin.setValue(7.5)
-        self.randomize_seed_checkbox.setChecked(False)
-        self.model_variant_combo.setCurrentText("分割掩码模型")
-        self._set_status(payload["status"])  # type: ignore[arg-type]
 
     def _handle_canvas_click(self, x: int, y: int) -> None:
         if self.original_image is None:
@@ -1006,9 +1051,9 @@ class BrushNetQtWindow(QMainWindow):
 
     def _set_controls_enabled(self, enabled: bool) -> None:
         self.run_button.setEnabled(enabled)
+        self.settings_button.setEnabled(enabled)
         self.open_image_button.setEnabled(enabled)
         self.open_mask_button.setEnabled(enabled)
-        self.load_example_button.setEnabled(enabled)
 
     def _run_inference(self) -> None:
         self._clear_gallery_results()
