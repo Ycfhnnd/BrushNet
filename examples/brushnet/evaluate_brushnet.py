@@ -21,6 +21,11 @@ from PIL import Image
 import open_clip
 import os
 import hpsv2
+import transformers.modeling_utils
+import transformers.pytorch_utils
+transformers.modeling_utils.apply_chunking_to_forward = transformers.pytorch_utils.apply_chunking_to_forward
+transformers.modeling_utils.find_pruneable_heads_and_indices = transformers.pytorch_utils.find_pruneable_heads_and_indices
+transformers.modeling_utils.prune_linear_layer = transformers.pytorch_utils.prune_linear_layer
 import ImageReward as RM
 import math
 from transformers import AutoProcessor, AutoModel

@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 from __future__ import annotations
 
 import gc
@@ -26,6 +23,7 @@ from segment_anything import SamPredictor, sam_model_registry
 
 os.chdir(PROJECT_ROOT)
 
+# 统一在核心层确定运行设备和默认模型位置，界面层只负责收集参数和展示结果。
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 WEIGHT_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 SAM_CHECKPOINT = PROJECT_ROOT / "data" / "ckpt" / "sam_vit_h_4b8939.pth"
@@ -38,6 +36,7 @@ POINT_MARKERS = [1, 5]
 SEGMENTATION_BRUSHNET_DIR = PROJECT_ROOT / "data" / "ckpt" / "segmentation_mask_brushnet_ckpt"
 RANDOM_MASK_BRUSHNET_DIR = PROJECT_ROOT / "data" / "ckpt" / "random_mask_brushnet_ckpt"
 
+# 管线与 SAM 模型都比较重，这里通过缓存避免重复初始化。
 PIPELINE_CACHE: Dict[str, Optional[object]] = {
     "pipe": None,
     "base_model": None,
@@ -53,77 +52,8 @@ class BrushNetAppError(RuntimeError):
     pass
 
 
-EXAMPLE_CASES = [
-    {
-        "label": "蛋糕桌面编辑",
-        "image": PROJECT_ROOT / "examples" / "brushnet" / "src" / "test_image.jpg",
-        "mask": PROJECT_ROOT / "examples" / "brushnet" / "src" / "test_mask.jpg",
-        "result": PROJECT_ROOT / "examples" / "brushnet" / "src" / "test_result.png",
-        "prompt": "A beautiful cake on the table",
-        "negative_prompt": "",
-        "scene": "适合观察局部替换与背景一致性",
-    },
-    {
-        "label": "人物服饰编辑",
-        "image": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_1.jpg",
-        "mask": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_1_mask.jpg",
-        "result": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_1_result.png",
-        "prompt": "A man in Chinese traditional clothes",
-        "negative_prompt": "",
-        "scene": "适合展示人物局部换装",
-    },
-    {
-        "label": "海边人物增强",
-        "image": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_2.jpg",
-        "mask": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_2_mask.jpg",
-        "result": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_2_result.png",
-        "prompt": "a charming woman with dress standing by the sea",
-        "negative_prompt": "",
-        "scene": "适合展示语义驱动的人像编辑",
-    },
-    {
-        "label": "玩具目标替换",
-        "image": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_3.jpg",
-        "mask": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_3_mask.jpg",
-        "result": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_3_result.png",
-        "prompt": "a cute toy on the table",
-        "negative_prompt": "",
-        "scene": "适合展示小目标修复与纹理生成",
-    },
-    {
-        "label": "车辆场景编辑",
-        "image": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_4.jpeg",
-        "mask": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_4_mask.jpg",
-        "result": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_4_result.png",
-        "prompt": "a car driving in the wild",
-        "negative_prompt": "",
-        "scene": "适合展示复杂背景中的目标重绘",
-    },
-    {
-        "label": "森林人像重绘",
-        "image": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_5.jpg",
-        "mask": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_5_mask.jpg",
-        "result": PROJECT_ROOT / "examples" / "brushnet" / "src" / "example_5_result.png",
-        "prompt": "a charming woman wearing dress standing in the dark forest",
-        "negative_prompt": "",
-        "scene": "适合展示光照与氛围迁移",
-    },
-]
-
-
-def read_rgb_image(path: Path) -> np.ndarray:
-    if not path.exists():
-        raise BrushNetAppError(f"找不到图片文件：{path}")
-    return np.array(Image.open(path).convert("RGB"))
-
-
-def open_rgb_pil(path: Path) -> Image.Image:
-    if not path.exists():
-        raise BrushNetAppError(f"找不到图片文件：{path}")
-    return Image.open(path).convert("RGB")
-
-
 def normalize_model_reference(value: str) -> str:
+    # 同时兼容 Hugging Face 模型 ID、本地相对路径和本地绝对路径。
     stripped = (value or "").strip()
     if not stripped:
         return stripped
@@ -179,17 +109,18 @@ def resolve_default_base_model() -> str:
 
 
 def get_brushnet_variant_map(base_model: Optional[str] = None) -> Dict[str, Dict[str, str]]:
+    # 给界面下拉框提供“方案名 -> 实际模型路径”的映射关系。
     resolved_base_model = normalize_model_reference(base_model or "") or resolve_default_base_model()
     default_brushnet = normalize_model_reference(resolve_default_brushnet_path())
     segmentation_path = str(SEGMENTATION_BRUSHNET_DIR) if SEGMENTATION_BRUSHNET_DIR.exists() else default_brushnet
     random_mask_path = str(RANDOM_MASK_BRUSHNET_DIR) if RANDOM_MASK_BRUSHNET_DIR.exists() else default_brushnet
 
     return {
-        "分割掩码模型": {
+        "分割掩膜 BrushNet": {
             "base_model": resolved_base_model,
             "brushnet_path": segmentation_path,
         },
-        "随机掩码模型": {
+        "随机掩膜 BrushNet": {
             "base_model": resolved_base_model,
             "brushnet_path": random_mask_path,
         },
@@ -200,7 +131,7 @@ def summarize_status(
     message: str,
     base_model: str,
     brushnet_path: str,
-    mask_source: str = "未生成",
+    mask_source: str = "未选择",
     actual_seed: Optional[int] = None,
     elapsed: Optional[float] = None,
 ) -> str:
@@ -208,24 +139,25 @@ def summarize_status(
     resolved_brushnet = normalize_model_reference(brushnet_path) or resolve_default_brushnet_path()
 
     lines = [
-        "系统状态",
-        f"设备: {DEVICE}",
+        "BrushNet 运行状态",
+        f"运行设备: {DEVICE}",
         f"基础模型: {resolved_base}",
         f"BrushNet 权重: {resolved_brushnet}",
-        f"SAM 权重: {'已检测到' if SAM_CHECKPOINT.exists() else '未检测到'}",
-        f"安全审查: {'已禁用' if DISABLE_SAFETY_CHECKER else '已启用'}",
-        f"掩码来源: {mask_source}",
+        f"SAM 权重: {'已找到' if SAM_CHECKPOINT.exists() else '未找到'}",
+        f"已关闭安全检查器: {DISABLE_SAFETY_CHECKER}",
+        f"掩膜来源: {mask_source}",
     ]
     if actual_seed is not None:
         lines.append(f"随机种子: {actual_seed}")
     if elapsed is not None:
         lines.append(f"推理耗时: {elapsed:.2f}s")
     lines.append("")
-    lines.append(f"说明: {message}")
+    lines.append(f"状态说明: {message}")
     return "\n".join(lines)
 
 
 def ensure_uint8_rgb(image: Optional[np.ndarray]) -> Optional[np.ndarray]:
+    # 将输入统一整理为三通道 uint8 RGB，便于 OpenCV / PIL / 模型共用。
     if image is None:
         return None
     if image.ndim == 2:
@@ -238,6 +170,7 @@ def ensure_uint8_rgb(image: Optional[np.ndarray]) -> Optional[np.ndarray]:
 
 
 def resize_for_workflow(image: np.ndarray, max_short_side: int = 768) -> np.ndarray:
+    # 控制输入尺寸和分辨率对齐，既节省显存也减少后续尺寸不兼容问题。
     image = ensure_uint8_rgb(image)
     assert image is not None
 
@@ -258,11 +191,12 @@ def validate_source_image(image: np.ndarray) -> np.ndarray:
     height, width = image.shape[:2]
     ratio = max(height, width) / max(1, min(height, width))
     if ratio > 2.0:
-        raise BrushNetAppError("图片长宽比不能超过 2:1，建议先裁剪后再演示。")
+        raise BrushNetAppError("Image aspect ratio cannot be larger than 2:1.")
     return image
 
 
 def build_binary_mask(mask_image: np.ndarray, target_size: Tuple[int, int]) -> np.ndarray:
+    # 将任意掩膜图规整成与原图同尺寸的三通道二值掩膜。
     mask_image = ensure_uint8_rgb(mask_image)
     assert mask_image is not None
 
@@ -270,8 +204,6 @@ def build_binary_mask(mask_image: np.ndarray, target_size: Tuple[int, int]) -> n
     if mask_image.shape[0] != target_height or mask_image.shape[1] != target_width:
         mask_image = cv2.resize(mask_image, (target_width, target_height), interpolation=cv2.INTER_NEAREST)
 
-    # Keep mask semantics aligned with the original Gradio demo and test_brushnet.py:
-    # any sufficiently bright RGB pixel is treated as white mask.
     binary = np.where(mask_image.sum(axis=-1) > 255, 255, 0).astype(np.uint8)
     return np.repeat(binary[:, :, None], 3, axis=2)
 
@@ -285,6 +217,7 @@ def build_overlay_image(
     edit_mask: np.ndarray,
     points: Optional[Sequence[PointRecord]] = None,
 ) -> np.ndarray:
+    # 仅用于界面预览：把编辑区域高亮，并绘制点击点。
     image = ensure_uint8_rgb(image)
     assert image is not None
 
@@ -309,6 +242,7 @@ def build_overlay_image(
 
 
 def build_masked_image(image: np.ndarray, edit_mask: np.ndarray) -> np.ndarray:
+    # 构造送给 BrushNet 的输入图：保留未编辑区域，编辑区域置黑。
     image = ensure_uint8_rgb(image)
     assert image is not None
 
@@ -317,6 +251,7 @@ def build_masked_image(image: np.ndarray, edit_mask: np.ndarray) -> np.ndarray:
 
 
 def clear_cached_pipeline() -> None:
+    # 切换模型或释放资源时，主动清理旧管线和 GPU 显存。
     pipe = PIPELINE_CACHE.get("pipe")
     if pipe is not None:
         PIPELINE_CACHE["pipe"] = None
@@ -347,10 +282,12 @@ def _base_model_looks_valid(path_value: str) -> bool:
 
 
 def ensure_pipeline(base_model: str, brushnet_path: str) -> Tuple[StableDiffusionBrushNetPipeline, bool, str, str]:
+    # 统一负责 BrushNet 管线的合法性检查、懒加载和缓存复用。
     resolved_base = normalize_model_reference(base_model) or resolve_default_base_model()
     resolved_brushnet = normalize_model_reference(brushnet_path) or resolve_default_brushnet_path()
 
     with PIPELINE_LOCK:
+        # 相同配置直接复用缓存，避免重复加载大型模型。
         cached_pipe = PIPELINE_CACHE.get("pipe")
         if (
             cached_pipe is not None
@@ -362,17 +299,17 @@ def ensure_pipeline(base_model: str, brushnet_path: str) -> Tuple[StableDiffusio
         clear_cached_pipeline()
         if not _brushnet_checkpoint_looks_valid(resolved_brushnet):
             raise BrushNetAppError(
-                "当前 BrushNet 权重路径无效。\n"
-                f"检测到的路径: {resolved_brushnet}\n"
-                "这个目录里应至少包含 `config.json` 和 `diffusion_pytorch_model.safetensors`。"
+                "BrushNet 权重目录无效。\n"
+                f"路径: {resolved_brushnet}\n"
+                "目录中应包含 config.json 和模型权重文件。"
             )
 
         base_candidate = Path(resolved_base)
         if base_candidate.exists() and not _base_model_looks_valid(resolved_base):
             raise BrushNetAppError(
-                "当前基础模型路径无效。\n"
-                f"检测到的路径: {resolved_base}\n"
-                "这个目录里应包含 `model_index.json`，也就是一个完整的 diffusers 基础模型目录。"
+                "基础模型目录无效。\n"
+                f"路径: {resolved_base}\n"
+                "目录中应包含 diffusers 格式的 model_index.json。"
             )
 
         try:
@@ -391,14 +328,15 @@ def ensure_pipeline(base_model: str, brushnet_path: str) -> Tuple[StableDiffusio
             )
         except Exception as exc:
             raise BrushNetAppError(
-                "BrushNet 推理管线加载失败。\n"
+                "BrushNet 管线初始化失败。\n"
                 f"基础模型: {resolved_base}\n"
                 f"BrushNet 权重: {resolved_brushnet}\n"
-                f"底层报错: {exc}"
+                f"错误信息: {exc}"
             ) from exc
 
         pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
         if DEVICE == "cuda":
+            # 在桌面端环境中，CPU offload 更适合控制显存占用。
             pipe.enable_model_cpu_offload()
         else:
             pipe = pipe.to(DEVICE)
@@ -410,13 +348,14 @@ def ensure_pipeline(base_model: str, brushnet_path: str) -> Tuple[StableDiffusio
 
 
 def ensure_sam_predictor() -> SamPredictor:
+    # SAM 只在首次需要交互分割时初始化一次。
     predictor = SAM_STATE.get("predictor")
     if predictor is not None:
         return predictor
 
     if not SAM_CHECKPOINT.exists():
         raise BrushNetAppError(
-            "没有找到 SAM 权重 data/ckpt/sam_vit_h_4b8939.pth。没有它时可以改为上传黑白掩码。"
+            "未找到 SAM 权重文件，期望路径为 data/ckpt/sam_vit_h_4b8939.pth。"
         )
 
     try:
@@ -425,7 +364,7 @@ def ensure_sam_predictor() -> SamPredictor:
         predictor = SamPredictor(sam_model)
     except Exception as exc:
         raise BrushNetAppError(
-            "SAM 权重加载失败，通常是文件损坏或下载不完整。请重新下载 sam_vit_h_4b8939.pth。"
+            f"SAM 分割器初始化失败: {exc}"
         ) from exc
 
     SAM_STATE["model"] = sam_model
@@ -434,8 +373,9 @@ def ensure_sam_predictor() -> SamPredictor:
 
 
 def infer_mask_from_points(image: np.ndarray, selected_points: Sequence[PointRecord]) -> np.ndarray:
+    # 将前景/背景点击点送入 SAM，得到当前分割掩膜。
     if not selected_points:
-        raise BrushNetAppError("当前还没有点击点，无法生成分割掩码。")
+        raise BrushNetAppError("请至少提供一个分割点。")
 
     predictor = ensure_sam_predictor()
     point_coords = np.array([point for point, _ in selected_points], dtype=np.float32)
@@ -459,56 +399,34 @@ def derive_effective_mask(
     selected_points: Sequence[PointRecord],
     invert_mask: bool,
 ) -> Tuple[np.ndarray, str]:
+    # 掩膜优先级：
+    # 1. 用户上传的掩膜
+    # 2. 已保存的原始掩膜
+    # 3. 基于当前点击点实时生成的 SAM 掩膜
     if uploaded_mask is not None:
         raw_mask = build_binary_mask(uploaded_mask, (original_image.shape[1], original_image.shape[0]))
-        return maybe_invert_mask(raw_mask, invert_mask), "上传掩码"
+        return maybe_invert_mask(raw_mask, invert_mask), "上传掩膜"
 
     if original_mask is not None:
         raw_mask = build_binary_mask(original_mask, (original_image.shape[1], original_image.shape[0]))
-        mask_source = "SAM 点击分割" if selected_points else "示例掩码"
+        mask_source = "SAM 掩膜" if selected_points else "已有掩膜"
         return maybe_invert_mask(raw_mask, invert_mask), mask_source
 
     if selected_points:
         raw_mask = infer_mask_from_points(original_image, selected_points)
-        return maybe_invert_mask(raw_mask, invert_mask), "SAM 点击分割"
+        return maybe_invert_mask(raw_mask, invert_mask), "SAM 掩膜"
 
-    raise BrushNetAppError("请先上传黑白掩码，或在图片上点击选择要编辑的区域。")
-
-
-def load_example_case(case_label: str, base_model: str, brushnet_path: str) -> Dict[str, object]:
-    case = next((item for item in EXAMPLE_CASES if item["label"] == case_label), None)
-    if case is None:
-        raise BrushNetAppError("没有找到对应的示例。")
-
-    image = validate_source_image(read_rgb_image(case["image"]))
-    raw_mask = build_binary_mask(read_rgb_image(case["mask"]), (image.shape[1], image.shape[0]))
-    overlay = build_overlay_image(image, raw_mask)
-    masked_image = build_masked_image(image, raw_mask)
-    status = summarize_status(
-        f"已加载示例：{case['label']}。这类场景 {case['scene']}。",
-        base_model,
-        brushnet_path,
-        mask_source="示例掩码",
-    )
-    return {
-        "image": image,
-        "raw_mask": raw_mask,
-        "overlay": overlay,
-        "masked_image": masked_image,
-        "prompt": case["prompt"],
-        "negative_prompt": case["negative_prompt"],
-        "results": [open_rgb_pil(case["result"])],
-        "status": status,
-    }
+    raise BrushNetAppError("请先上传掩膜图，或者在图像上点击分割点。")
 
 
 def prepare_source_image(image: np.ndarray, base_model: str, brushnet_path: str) -> Dict[str, object]:
+    # 原图载入后的统一入口：做尺寸合法化，并初始化预览状态。
     prepared_image = validate_source_image(image)
     status = summarize_status(
-        "图片已载入。下一步可以点击图像做 SAM 分割，或者直接上传一张白色区域表示待编辑区域的掩码图。",
+        "原图已加载，可以继续上传掩膜，或者点击图像进行 SAM 分割。",
         base_model,
         brushnet_path,
-        mask_source="未生成",
+        mask_source="未选择",
     )
     return {
         "image": prepared_image,
@@ -524,8 +442,9 @@ def build_preview_from_uploaded_mask(
     base_model: str,
     brushnet_path: str,
 ) -> Dict[str, object]:
+    # 用户直接上传掩膜时，生成界面预览所需的图像和状态信息。
     if original_image is None:
-        raise BrushNetAppError("请先上传原始图片，再上传掩码。")
+        raise BrushNetAppError("请先加载原图，再上传掩膜。")
 
     original_image = ensure_uint8_rgb(original_image)
     assert original_image is not None
@@ -537,10 +456,10 @@ def build_preview_from_uploaded_mask(
     overlay = build_overlay_image(original_image, effective_mask)
     masked_image = build_masked_image(original_image, effective_mask)
     status = summarize_status(
-        "已根据上传掩码生成编辑区域预览。白色区域表示会被重新生成的区域。",
+        "已将上传掩膜应用到当前图像。",
         base_model,
         brushnet_path,
-        mask_source="上传掩码",
+        mask_source="上传掩膜",
     )
     return {
         "overlay": overlay,
@@ -557,10 +476,11 @@ def build_preview_from_points(
     base_model: str,
     brushnet_path: str,
 ) -> Dict[str, object]:
+    # 用户通过点击点交互分割时，生成界面预览所需的图像和状态信息。
     if original_image is None:
-        raise BrushNetAppError("请先上传图片或加载示例。")
+        raise BrushNetAppError("请先加载原图，再选择分割点。")
     if not selected_points:
-        raise BrushNetAppError("当前没有点击点，无法生成分割结果。")
+        raise BrushNetAppError("请至少选择一个前景点或背景点。")
 
     original_image = ensure_uint8_rgb(original_image)
     assert original_image is not None
@@ -570,10 +490,10 @@ def build_preview_from_points(
     overlay = build_overlay_image(original_image, effective_mask, selected_points)
     masked_image = build_masked_image(original_image, effective_mask)
     status = summarize_status(
-        "已更新点击分割结果。绿色点表示添加区域，红色点表示排除区域。",
+        "已根据当前选点更新 SAM 分割预览。",
         base_model,
         brushnet_path,
-        mask_source="SAM 点击分割",
+        mask_source="SAM 掩膜",
     )
     return {
         "overlay": overlay,
@@ -593,8 +513,9 @@ def refresh_mask_preview(
     base_model: str,
     brushnet_path: str,
 ) -> Dict[str, object]:
+    # 当用户撤销点、切换反转、清空掩膜时，统一从当前状态重新构造预览。
     if original_image is None:
-        status = summarize_status("等待上传图片。", base_model, brushnet_path)
+        status = summarize_status("请先加载原图。", base_model, brushnet_path)
         return {
             "overlay": None,
             "effective_mask": None,
@@ -615,7 +536,7 @@ def refresh_mask_preview(
         )
     except BrushNetAppError:
         status = summarize_status(
-            "当前没有可更新的掩码，等待新的点击或上传掩码。",
+            "当前还没有可用掩膜，请上传掩膜或选择分割点。",
             base_model,
             brushnet_path,
         )
@@ -626,11 +547,11 @@ def refresh_mask_preview(
             "status": status,
         }
 
-    overlay_points = selected_points if mask_source == "SAM 点击分割" and uploaded_mask is None else None
+    overlay_points = selected_points if mask_source == "SAM 掩膜" and uploaded_mask is None else None
     overlay = build_overlay_image(image, effective_mask, overlay_points)
     masked_image = build_masked_image(image, effective_mask)
     status = summarize_status(
-        "已根据当前设置刷新掩码语义。白色区域表示将被重新生成。",
+        "掩膜预览已刷新。",
         base_model,
         brushnet_path,
         mask_source=mask_source,
@@ -662,11 +583,13 @@ def run_brushnet_inference(
     base_model: str,
     brushnet_path: str,
 ) -> Tuple[List[Image.Image], np.ndarray, np.ndarray, str]:
+    # 核心推理入口：
+    # 原图/掩膜准备 -> 获取或初始化管线 -> Batch 推理 -> 可选边缘融合 -> 返回结果。
     source_image = ensure_uint8_rgb(original_image if original_image is not None else input_image)
     if source_image is None:
-        raise BrushNetAppError("请先上传图片。")
+        raise BrushNetAppError("请先加载原图。")
     if not (prompt or "").strip():
-        raise BrushNetAppError("请输入提示词后再开始生成。")
+        raise BrushNetAppError("请先输入提示词，再执行推理。")
 
     effective_mask, mask_source = derive_effective_mask(
         source_image,
@@ -678,7 +601,7 @@ def run_brushnet_inference(
     masked_image = build_masked_image(source_image, effective_mask)
 
     if blending and control_strength < 1.0:
-        raise BrushNetAppError("启用模糊融合时，建议将 Control Strength 设为 1.0 或更高。")
+        raise BrushNetAppError("启用模糊融合时，Control Strength 必须大于等于 1.0。")
 
     pipe, _, resolved_base, resolved_brushnet = ensure_pipeline(base_model, brushnet_path)
     actual_seed = random.randint(0, 2_147_483_647) if randomize_seed else int(seed)
@@ -687,6 +610,7 @@ def run_brushnet_inference(
     init_image = Image.fromarray(masked_image).convert("RGB")
     mask_image = Image.fromarray(effective_mask).convert("RGB")
 
+    # 支持一次生成多张图，因此需要把 prompt 扩成 batch。
     prompt_batch = [prompt.strip()] * int(num_outputs)
     negative_text = (negative_prompt or "").strip()
     negative_batch = [negative_text] * int(num_outputs) if negative_text else None
@@ -707,6 +631,7 @@ def run_brushnet_inference(
     if blending:
         blended_results = []
         mask_np = (effective_mask[:, :, 0] > 127).astype(np.float32)[:, :, None]
+        # 对掩膜边缘做模糊，减轻生成结果与原图拼接时的接缝感。
         mask_blurred = cv2.GaussianBlur(mask_np[:, :, 0] * 255, (21, 21), 0) / 255.0
         soft_mask = 1 - (1 - mask_np) * (1 - mask_blurred[:, :, None])
         for image in results:
@@ -716,7 +641,7 @@ def run_brushnet_inference(
         results = blended_results
 
     status = summarize_status(
-        "推理完成。右侧结果区域展示了 BrushNet 生成结果，你可以继续修改提示词或掩码后再次生成。",
+        "推理已完成。",
         resolved_base,
         resolved_brushnet,
         mask_source=mask_source,

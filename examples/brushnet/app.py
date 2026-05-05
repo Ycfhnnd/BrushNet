@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 from __future__ import annotations
 
 import argparse
@@ -195,6 +192,7 @@ QSplitter::handle {
 
 
 def numpy_to_qimage(image: np.ndarray) -> QImage:
+    # 将 numpy 图像转成 Qt 可显示的 QImage。
     image = core.ensure_uint8_rgb(image)
     if image is None:
         raise ValueError("Image is None.")
@@ -204,6 +202,7 @@ def numpy_to_qimage(image: np.ndarray) -> QImage:
 
 
 def pil_to_qpixmap(image: Image.Image) -> QPixmap:
+    # 生成结果一般是 PIL.Image，这里统一转成界面控件可直接显示的 QPixmap。
     rgb = np.array(image.convert("RGB"))
     return QPixmap.fromImage(numpy_to_qimage(rgb))
 
@@ -223,6 +222,7 @@ BRAND_IMAGE_CANDIDATES = (
 
 
 def _load_trimmed_brand_pixmap(image_path: Path, target_size: QSize) -> Optional[QPixmap]:
+    # 自动裁掉 logo 周围的大块空白，让标题区展示更紧凑。
     with Image.open(image_path) as image:
         rgba_image = image.convert("RGBA")
         rgba_array = np.array(rgba_image)
@@ -267,132 +267,8 @@ def _build_shield_path(rect: QRectF) -> QPainterPath:
     path.closeSubpath()
     return path
 
-
-def _draw_brand_pixmap(width: int, height: int) -> QPixmap:
-    pixmap = QPixmap(width, height)
-    pixmap.fill(Qt.transparent)
-
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setRenderHint(QPainter.TextAntialiasing)
-
-    brand_blue = QColor("#1b96e3")
-    brand_light = QColor("#edf7ff")
-    brand_white = QColor("#ffffff")
-
-    shield_width = min(220.0, width * 0.45)
-    shield_height = min(240.0, height * 0.58)
-    shield_rect = QRectF((width - shield_width) / 2.0, 10.0, shield_width, shield_height)
-    inner_rect = shield_rect.adjusted(12.0, 12.0, -12.0, -14.0)
-
-    outer_path = _build_shield_path(shield_rect)
-    inner_path = _build_shield_path(inner_rect)
-
-    painter.fillPath(outer_path, brand_white)
-    painter.setPen(QPen(brand_blue, 9, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-    painter.drawPath(outer_path)
-
-    painter.fillPath(inner_path, brand_white)
-    painter.setPen(QPen(brand_blue, 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-    painter.drawPath(inner_path)
-
-    top_band = QRectF(inner_rect.left() + 18.0, inner_rect.top() + 10.0, inner_rect.width() - 36.0, inner_rect.height() * 0.30)
-    painter.fillRect(top_band, brand_light)
-    painter.drawRect(top_band)
-
-    tower_width = top_band.width() * 0.18
-    tower_height = top_band.height() * 0.72
-    tower_rect = QRectF(
-        top_band.center().x() - tower_width / 2.0,
-        top_band.top() + 8.0,
-        tower_width,
-        tower_height,
-    )
-    painter.setBrush(brand_blue)
-    painter.drawRect(tower_rect)
-    for offset in (-tower_width * 0.75, 0.0, tower_width * 0.75):
-        battlement = QRectF(tower_rect.center().x() + offset - tower_width * 0.18, tower_rect.top() - 6.0, tower_width * 0.36, 8.0)
-        painter.drawRect(battlement)
-
-    painter.setPen(QPen(brand_blue, 2))
-    painter.setBrush(Qt.NoBrush)
-
-    left_scroll = QPainterPath()
-    left_scroll.moveTo(top_band.left() + 18.0, top_band.bottom() - 8.0)
-    left_scroll.cubicTo(
-        top_band.left() + 6.0,
-        top_band.center().y(),
-        top_band.left() + 8.0,
-        top_band.top() + 16.0,
-        top_band.left() + 28.0,
-        top_band.top() + 12.0,
-    )
-    left_scroll.cubicTo(
-        top_band.left() + 44.0,
-        top_band.top() + 10.0,
-        top_band.left() + 40.0,
-        top_band.center().y(),
-        top_band.left() + 24.0,
-        top_band.center().y() + 6.0,
-    )
-    painter.drawPath(left_scroll)
-
-    right_scroll = QPainterPath()
-    right_scroll.moveTo(top_band.right() - 18.0, top_band.bottom() - 8.0)
-    right_scroll.cubicTo(
-        top_band.right() - 6.0,
-        top_band.center().y(),
-        top_band.right() - 8.0,
-        top_band.top() + 16.0,
-        top_band.right() - 28.0,
-        top_band.top() + 12.0,
-    )
-    right_scroll.cubicTo(
-        top_band.right() - 44.0,
-        top_band.top() + 10.0,
-        top_band.right() - 40.0,
-        top_band.center().y(),
-        top_band.right() - 24.0,
-        top_band.center().y() + 6.0,
-    )
-    painter.drawPath(right_scroll)
-
-    painter.setPen(QPen(brand_blue, 2))
-    painter.setFont(QFont("Times New Roman", 12, QFont.Bold))
-    painter.drawText(QRectF(tower_rect.left() - 28.0, tower_rect.bottom() + 6.0, tower_rect.width() + 56.0, 22.0), Qt.AlignCenter, "1902")
-
-    book_rect = QRectF(inner_rect.left() + 24.0, inner_rect.top() + inner_rect.height() * 0.42, inner_rect.width() - 48.0, inner_rect.height() * 0.20)
-    painter.drawRoundedRect(book_rect, 10.0, 10.0)
-    painter.drawLine(QPointF(book_rect.center().x(), book_rect.top() + 4.0), QPointF(book_rect.center().x(), book_rect.bottom() - 4.0))
-    painter.drawLine(QPointF(book_rect.left() + 10.0, book_rect.top() + 8.0), QPointF(book_rect.center().x() - 8.0, book_rect.top() + 16.0))
-    painter.drawLine(QPointF(book_rect.right() - 10.0, book_rect.top() + 8.0), QPointF(book_rect.center().x() + 8.0, book_rect.top() + 16.0))
-    painter.setFont(QFont("STKaiti", 11, QFont.Bold))
-    painter.drawText(book_rect.adjusted(6.0, 14.0, -6.0, -4.0), Qt.AlignCenter, "南京工业大学")
-
-    ribbon_rect = QRectF(inner_rect.left() + 34.0, inner_rect.bottom() - 38.0, inner_rect.width() - 68.0, 22.0)
-    painter.drawRoundedRect(ribbon_rect, 8.0, 8.0)
-    painter.setFont(QFont("Times New Roman", 10, QFont.Bold))
-    painter.drawText(ribbon_rect, Qt.AlignCenter, "NANJING TECH")
-
-    chinese_rect = QRectF(12.0, shield_rect.bottom() + 18.0, width - 24.0, 58.0)
-    english_rect = QRectF(12.0, chinese_rect.bottom() + 2.0, width - 24.0, 42.0)
-
-    painter.setPen(QPen(brand_blue, 1))
-    chinese_font = QFont("STKaiti", 34)
-    chinese_font.setBold(True)
-    painter.setFont(chinese_font)
-    painter.drawText(chinese_rect, Qt.AlignCenter, "南京工业大学")
-
-    english_font = QFont("Times New Roman", 20, QFont.Bold)
-    english_font.setLetterSpacing(QFont.AbsoluteSpacing, 1.2)
-    painter.setFont(english_font)
-    painter.drawText(english_rect, Qt.AlignCenter, "NANJING TECH UNIVERSITY")
-
-    painter.end()
-    return pixmap
-
-
 def build_brand_pixmap(target_size: QSize = QSize(112, 112)) -> QPixmap:
+    # 优先使用本地图像资源，找不到再退回到代码绘制的备用图。
     primary_path = core.PROJECT_ROOT / PRIMARY_BRAND_IMAGE
     if primary_path.exists():
         pixmap = _load_trimmed_brand_pixmap(primary_path, target_size)
@@ -405,7 +281,7 @@ def build_brand_pixmap(target_size: QSize = QSize(112, 112)) -> QPixmap:
             pixmap = _load_trimmed_brand_pixmap(candidate, target_size)
             if pixmap is not None:
                 return pixmap
-    return _draw_brand_pixmap(target_size.width(), target_size.height())
+
 
 
 class ImageCanvas(QLabel):
@@ -413,6 +289,7 @@ class ImageCanvas(QLabel):
 
     def __init__(self, title: str, clickable: bool = False, minimum_height: int = 280, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        # 这个控件既负责显示图像，也承担“点击取点”的交互能力。
         self._title = title
         self._clickable = clickable
         self._image: Optional[np.ndarray] = None
@@ -454,6 +331,8 @@ class ImageCanvas(QLabel):
         self._set_placeholder()
 
     def _update_pixmap(self) -> None:
+        # 根据当前控件大小自适应缩放图片，同时记录真实显示区域，
+        # 便于后续把鼠标点击位置映射回原图坐标。
         if self._qimage is None:
             self._set_placeholder()
             return
@@ -486,6 +365,7 @@ class ImageCanvas(QLabel):
         local_x = event.pos().x() - self._display_rect.x()
         local_y = event.pos().y() - self._display_rect.y()
         image_height, image_width = self._image.shape[:2]
+        # 将缩放后显示区域中的点击点，映射回原图坐标系。
         image_x = int(np.clip(local_x * image_width / display_width, 0, image_width - 1))
         image_y = int(np.clip(local_y * image_height / display_height, 0, image_height - 1))
         self.imageClicked.emit(image_x, image_y)
@@ -517,6 +397,7 @@ class InferenceWorker(QThread):
         brushnet_path: str,
     ):
         super().__init__()
+        # 将当前界面状态完整打包，交给后台线程执行，避免推理时阻塞主界面。
         self.payload = {
             "input_image": None if input_image is None else np.array(input_image, copy=True),
             "original_image": None if original_image is None else np.array(original_image, copy=True),
@@ -538,6 +419,7 @@ class InferenceWorker(QThread):
         }
 
     def run(self) -> None:  # type: ignore[override]
+        # 真正的推理逻辑在 core 层，这里只负责线程调用与结果转发。
         try:
             results, effective_mask, masked_image, status = core.run_brushnet_inference(**self.payload)
         except core.BrushNetAppError as exc:
@@ -551,6 +433,7 @@ class InferenceWorker(QThread):
 class BrushNetQtWindow(QMainWindow):
     def __init__(self, base_model: str, brushnet_path: str):
         super().__init__()
+        # 保存界面当前状态，所有交互都围绕这几个核心字段展开。
         self.default_base_model = base_model
         self.default_brushnet_path = brushnet_path
 
@@ -568,6 +451,8 @@ class BrushNetQtWindow(QMainWindow):
         self._set_initial_status()
 
     def _build_ui(self) -> None:
+        # 主界面分为左右两栏：
+        # 左侧负责输入图像、掩膜和参数；右侧负责预览和结果展示。
         central = QWidget()
         root_layout = QVBoxLayout(central)
         root_layout.setContentsMargins(18, 18, 18, 18)
@@ -752,6 +637,7 @@ class BrushNetQtWindow(QMainWindow):
         self.run_button.clicked.connect(self._run_inference)
 
     def _build_settings_dialog(self) -> None:
+        # 参数对话框与主界面解耦，减少主窗口信息密度。
         self.settings_dialog = QDialog(self)
         self.settings_dialog.setWindowTitle("参数设置")
         self.settings_dialog.resize(680, 520)
@@ -871,6 +757,7 @@ class BrushNetQtWindow(QMainWindow):
         return
 
     def _set_gallery_results(self, images: Sequence[Image.Image]) -> None:
+        # 将推理输出批量放入右侧结果列表中展示。
         self.result_list.clear()
         self.current_results = list(images)
         for index, image in enumerate(images, start=1):
@@ -885,6 +772,7 @@ class BrushNetQtWindow(QMainWindow):
         self.result_list.clear()
 
     def _choose_source_image(self) -> None:
+        # 载入原图后，重置所有与掩膜和结果相关的状态。
         path, _ = QFileDialog.getOpenFileName(
             self,
             "选择输入图像",
@@ -923,6 +811,7 @@ class BrushNetQtWindow(QMainWindow):
         self._update_settings_summary()
 
     def _choose_mask_image(self) -> None:
+        # 上传外部掩膜后，会清空点选分割状态，避免两套掩膜来源混用。
         if self.original_image is None:
             self._show_error("请先上传原始图片，再上传黑白掩码。")
             return
@@ -967,6 +856,7 @@ class BrushNetQtWindow(QMainWindow):
         self._refresh_preview()
 
     def _handle_canvas_click(self, x: int, y: int) -> None:
+        # 用户在图像上点前景/背景点后，实时调用 core 层生成新的 SAM 预览。
         if self.original_image is None:
             return
 
@@ -1010,6 +900,7 @@ class BrushNetQtWindow(QMainWindow):
         self._refresh_preview()
 
     def _refresh_preview(self) -> None:
+        # 所有“状态变化但尚未推理”的场景，统一走这个刷新逻辑。
         try:
             preview = core.refresh_mask_preview(
                 self.original_image,
@@ -1042,6 +933,7 @@ class BrushNetQtWindow(QMainWindow):
         self._set_status(preview["status"])  # type: ignore[arg-type]
 
     def _apply_variant_selection(self, variant_name: str) -> None:
+        # 根据下拉框中的预设方案，自动填充模型路径。
         variant_map = core.get_brushnet_variant_map(self._current_base_model())
         selected = variant_map.get(variant_name)
         if not selected:
@@ -1056,6 +948,7 @@ class BrushNetQtWindow(QMainWindow):
         self.open_mask_button.setEnabled(enabled)
 
     def _run_inference(self) -> None:
+        # 推理走后台线程，主线程只负责禁用控件和显示执行状态。
         self._clear_gallery_results()
         self._set_controls_enabled(False)
         self.run_button.setText("生成中...")
@@ -1093,6 +986,7 @@ class BrushNetQtWindow(QMainWindow):
         self.worker.start()
 
     def _handle_inference_success(self, results, effective_mask, masked_image, status: str) -> None:
+        # 推理成功后，同时更新输入预览、掩膜预览和结果列表。
         if effective_mask is not None and self.original_image is not None:
             overlay_points = self.selected_points if self.uploaded_mask is None else None
             overlay = core.build_overlay_image(self.original_image, effective_mask, overlay_points)
@@ -1119,6 +1013,7 @@ class BrushNetQtWindow(QMainWindow):
 
 
 def parse_args() -> argparse.Namespace:
+    # 允许从命令行覆盖默认模型路径，便于调试和切换权重。
     parser = argparse.ArgumentParser(description="BrushNet PyQt5 desktop UI")
     parser.add_argument("--base-model", default=core.resolve_default_base_model(), help="Base model path or model id")
     parser.add_argument("--brushnet-path", default=core.resolve_default_brushnet_path(), help="BrushNet checkpoint path")
