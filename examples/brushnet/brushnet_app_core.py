@@ -116,11 +116,11 @@ def get_brushnet_variant_map(base_model: Optional[str] = None) -> Dict[str, Dict
     random_mask_path = str(RANDOM_MASK_BRUSHNET_DIR) if RANDOM_MASK_BRUSHNET_DIR.exists() else default_brushnet
 
     return {
-        "分割掩膜 BrushNet": {
+        "分割掩膜模型": {
             "base_model": resolved_base_model,
             "brushnet_path": segmentation_path,
         },
-        "随机掩膜 BrushNet": {
+        "随机掩膜模型": {
             "base_model": resolved_base_model,
             "brushnet_path": random_mask_path,
         },
@@ -335,11 +335,7 @@ def ensure_pipeline(base_model: str, brushnet_path: str) -> Tuple[StableDiffusio
             ) from exc
 
         pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
-        if DEVICE == "cuda":
-            # 在桌面端环境中，CPU offload 更适合控制显存占用。
-            pipe.enable_model_cpu_offload()
-        else:
-            pipe = pipe.to(DEVICE)
+        pipe = pipe.to(DEVICE)
 
         PIPELINE_CACHE["pipe"] = pipe
         PIPELINE_CACHE["base_model"] = resolved_base
