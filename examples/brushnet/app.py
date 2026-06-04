@@ -601,14 +601,38 @@ class BrushNetQtWindow(QMainWindow):
 
         result_group = QGroupBox("生成结果")
         result_layout = QVBoxLayout(result_group)
+        result_layout.setSpacing(10)
+
+        # 原图 vs 生成结果 对比预览
+        compare_row = QHBoxLayout()
+        compare_row.setSpacing(10)
+        self.compare_original = ImageCanvas("原图（含掩码）", clickable=False, minimum_height=300)
+        self.compare_result   = ImageCanvas("生成结果",       clickable=False, minimum_height=300)
+        compare_row.addWidget(self.compare_original, 1)
+        compare_row.addWidget(self.compare_result,   1)
+        result_layout.addLayout(compare_row, 1)
+
+        # 缩略图列表（横排，点击切换对比视图）
         self.result_list = QListWidget()
         self.result_list.setViewMode(QListWidget.IconMode)
         self.result_list.setResizeMode(QListWidget.Adjust)
-        self.result_list.setWrapping(True)
-        self.result_list.setSpacing(12)
+        self.result_list.setWrapping(False)
+        self.result_list.setFlow(QListWidget.LeftToRight)
+        self.result_list.setSpacing(8)
         self.result_list.setMovement(QListWidget.Static)
-        self.result_list.setIconSize(QSize(260, 260))
+        self.result_list.setIconSize(QSize(120, 120))
+        self.result_list.setFixedHeight(148)
         result_layout.addWidget(self.result_list)
+
+        # 保存按钮
+        save_row = QHBoxLayout()
+        self.save_current_button = QPushButton("保存当前结果")
+        self.save_all_button     = QPushButton("保存全部结果")
+        self.save_all_button.setObjectName("AccentButton")
+        save_row.addWidget(self.save_current_button)
+        save_row.addWidget(self.save_all_button)
+        result_layout.addLayout(save_row)
+
         right_layout.addWidget(result_group, 1)
 
         splitter.addWidget(right_panel)
@@ -623,6 +647,9 @@ class BrushNetQtWindow(QMainWindow):
         self.clear_points_button.clicked.connect(self._clear_all_points)
         self.invert_mask_checkbox.stateChanged.connect(self._refresh_preview)
         self.settings_button.clicked.connect(self._open_settings_dialog)
+        self.result_list.currentRowChanged.connect(self._handle_result_selection)
+        self.save_current_button.clicked.connect(self._save_current_result)
+        self.save_all_button.clicked.connect(self._save_all_results)
         self.model_variant_combo.currentTextChanged.connect(self._apply_variant_selection)
         self.model_variant_combo.currentTextChanged.connect(self._update_settings_summary)
         self.base_model_edit.textChanged.connect(self._update_settings_summary)
@@ -757,19 +784,56 @@ class BrushNetQtWindow(QMainWindow):
         return
 
     def _set_gallery_results(self, images: Sequence[Image.Image]) -> None:
-        # 将推理输出批量放入右侧结果列表中展示。
         self.result_list.clear()
         self.current_results = list(images)
         for index, image in enumerate(images, start=1):
             pixmap = pil_to_qpixmap(image)
-            scaled = pixmap.scaled(260, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled = pixmap.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             item = QListWidgetItem(QIcon(scaled), f"结果 {index}")
-            item.setSizeHint(QSize(280, 300))
+            item.setSizeHint(QSize(136, 140))
             self.result_list.addItem(item)
+        if images:
+            self.result_list.setCurrentRow(0)
+            self.compare_result.set_numpy_image(np.array(images[0].convert("RGB")))
 
     def _clear_gallery_results(self) -> None:
         self.current_results = []
         self.result_list.clear()
+        self.compare_result.clear_image()
+        self.compare_original.clear_image()
+
+    def _handle_result_selection(self, row: int) -> None:
+        if 0 <= row < len(self.current_results):
+            self.compare_result.set_numpy_image(
+                np.array(self.current_results[row].convert("RGB"))
+            )
+
+    def _save_current_result(self) -> None:
+        if not self.current_results:
+            QMessageBox.information(self, "提示", "暂无生成结果可保存。")
+            return
+        row = self.result_list.currentRow()
+        image = self.current_results[row if row >= 0 else 0]
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存当前结果", "", "PNG (*.png);;JPEG (*.jpg *.jpeg)"
+        )
+        if path:
+            image.save(path)
+
+    def _save_all_results(self) -> None:
+        if not self.current_results:
+            QMessageBox.information(self, "提示", "暂无生成结果可保存。")
+            return
+        folder = QFileDialog.getExistingDirectory(self, "选择保存目录")
+        if not folder:
+            return
+        import datetime
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        for i, image in enumerate(self.current_results):
+            image.save(f"{folder}/result_{ts}_{i + 1}.png")
+        QMessageBox.information(
+            self, "完成", f"已保存 {len(self.current_results)} 张结果到：\n{folder}"
+        )
 
     def _choose_source_image(self) -> None:
         # 载入原图后，重置所有与掩膜和结果相关的状态。
@@ -986,13 +1050,14 @@ class BrushNetQtWindow(QMainWindow):
         self.worker.start()
 
     def _handle_inference_success(self, results, effective_mask, masked_image, status: str) -> None:
-        # 推理成功后，同时更新输入预览、掩膜预览和结果列表。
         if effective_mask is not None and self.original_image is not None:
             overlay_points = self.selected_points if self.uploaded_mask is None else None
             overlay = core.build_overlay_image(self.original_image, effective_mask, overlay_points)
             self.input_canvas.set_numpy_image(overlay)
             self.mask_preview.set_numpy_image(effective_mask)
             self.masked_preview.set_numpy_image(masked_image)
+            # 左侧对比区显示原图（含掩码叠加）
+            self.compare_original.set_numpy_image(overlay)
         self._set_gallery_results(results)
         self._set_status(status)
 
